@@ -1238,8 +1238,6 @@ def main():
     # Final summary
     print("\n" + "="*70)
     print("ASSIGNMENT COMPLETED SUCCESSFULLY")
-    print("All parts implemented with detailed logging and visualization.")
-    print("Refer to generated PNG files and saved results for analysis.")
     print("="*70)
 
 
