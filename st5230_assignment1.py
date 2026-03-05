@@ -1,13 +1,15 @@
 """
 ST5230 Assignment 1: Applied Natural Language Processing
 
+!!!MUST use Colab to run the code. Mac is almost f....
+
 This script implements a complete solution for Assignment 1 of ST5230,
 covering all three parts using PyTorch. The implementation includes:
 - Part I: Training and comparison of n-gram, RNN, LSTM, and Transformer language models
 - Part II: Ablation study on embedding variants (trainable, self-trained fixed, pretrained fixed)
 - Part III: Downstream sentiment analysis task using learned representations
 
-Dataset used: 
+Dataset used:
 - Pretraining: Wikitext-2 style text from sample Wikipedia excerpts (plain text)
 - Downstream: IMDb movie reviews for sentiment analysis
 """
@@ -62,7 +64,7 @@ CONFIG = {
     "eval_interval": 2,
     "downstream_batch_size": 16,
     "downstream_epochs": 5,
-    "imdb_data_path": "/storage/data/imdb"  # Expected path for IMDb data
+    "imdb_data_path": "IMDB Dataset.csv"  # Expected path for IMDb data
 }
 
 print(f"Using device: {CONFIG['device']}")
@@ -75,10 +77,10 @@ def simple_tokenize(text: str) -> List[str]:
     """
     Basic tokenization using regex to extract words.
     Replaces torchtext's get_tokenizer functionality.
-    
+
     Args:
         text: Input string
-        
+
     Returns:
         List of lowercase word tokens without punctuation
     """
@@ -91,30 +93,30 @@ def build_vocab_from_texts(texts: List[str], min_freq: int = 2, max_size: int = 
     """
     Build vocabulary from list of texts without torchtext.
     Creates stoi (string-to-index) and itos (index-to-string) mappings.
-    
+
     Args:
         texts: List of raw text strings
         min_freq: Minimum frequency for a word to be included
         max_size: Maximum vocabulary size (including special tokens)
-        
+
     Returns:
         Dictionary containing vocab_list, stoi, itos, and unk/pad indices
     """
     counter: CounterType = Counter()
-    
+
     # Count word frequencies
     for text in texts:
         if isinstance(text, str):
             counter.update(simple_tokenize(text))
-    
+
     # Filter by minimum frequency and limit size
     valid_words = [word for word, freq in counter.items() if freq >= min_freq]
     vocab_list = ['<pad>', '<unk>'] + sorted(valid_words)[:max_size - 2]
-    
+
     # Create mappings
     stoi = {word: idx for idx, word in enumerate(vocab_list)}
     itos = {idx: word for idx, word in enumerate(vocab_list)}
-    
+
     return {
         'vocab_list': vocab_list,
         'stoi': stoi,
@@ -217,8 +219,8 @@ class NGramLanguageModel:
         generated = tokens[:]
         for _ in range(max_len):
             context = current_context[-(self.n - 1):]
-            candidates = [(w, self.get_probability(context, w)) 
-                        for w in self.vocab 
+            candidates = [(w, self.get_probability(context, w))
+                        for w in self.vocab
                         if w not in [self.pad_token, self.unk_token]]
             if not candidates:
                 break
@@ -371,146 +373,197 @@ class TransformerLanguageModel(BasicLanguageModel):
 # DATA PROCESSING UTILITIES
 # ---------------------------
 
+# class TextDataset(Dataset):
+#     """Custom dataset for language modeling."""
+
+#     def __init__(self, data: torch.Tensor, block_size: int):
+#         self.data = data
+#         self.block_size = block_size
+
+#     def __len__(self):
+#         return max(0, len(self.data) - self.block_size)
+
+#     def __getitem__(self, idx):
+#         chunk = self.data[idx:idx + self.block_size + 1]
+#         src = chunk[:-1]  # Input sequence
+#         tgt = chunk[1:]   # Target sequence (shifted by one)
+#         return src, tgt
 class TextDataset(Dataset):
-    """Custom dataset for language modeling."""
+    """Custom dataset for language modeling (Non-overlapping chunks)."""
 
     def __init__(self, data: torch.Tensor, block_size: int):
         self.data = data
         self.block_size = block_size
+        # 计算可以切分出多少个不重叠的完整块
+        self.num_samples = (len(self.data) - 1) // self.block_size
 
     def __len__(self):
-        return max(0, len(self.data) - self.block_size)
+        return max(0, self.num_samples)
 
     def __getitem__(self, idx):
-        chunk = self.data[idx:idx + self.block_size + 1]
+        # 按照 block_size 的步长来获取数据
+        i = idx * self.block_size
+        chunk = self.data[i:i + self.block_size + 1]
         src = chunk[:-1]  # Input sequence
         tgt = chunk[1:]   # Target sequence (shifted by one)
         return src, tgt
 
-def load_sample_wiki_data() -> Tuple[List[str], List[str], List[str]]:
-    """
-    Load sample Wikipedia-style text data without torchtext.
-    In practice, this would read from actual .txt files.
-    Here we simulate with realistic text snippets.
-    """
-    # Simulated Wikipedia excerpts (in practice, load from files)
-    sample_paragraphs = [
-        "The quick brown fox jumps over the lazy dog near the river bank where fish swim upstream. "
-        "Natural language processing enables machines to understand human communication patterns.",
+# def load_sample_wiki_data() -> Tuple[List[str], List[str], List[str]]:
+#     """
+#     Load sample Wikipedia-style text data without torchtext.
+#     In practice, this would read from actual .txt files.
+#     Here we simulate with realistic text snippets.
+#     """
+#     # Simulated Wikipedia excerpts (in practice, load from files)
+#     sample_paragraphs = [
+#         "The quick brown fox jumps over the lazy dog near the river bank where fish swim upstream. "
+#         "Natural language processing enables machines to understand human communication patterns.",
 
-        "Machine learning algorithms improve through experience without explicit programming. "
-        "Deep neural networks have revolutionized computer vision and speech recognition fields.",
+#         "Machine learning algorithms improve through experience without explicit programming. "
+#         "Deep neural networks have revolutionized computer vision and speech recognition fields.",
 
-        "Artificial intelligence research spans many disciplines including mathematics statistics "
-        "and cognitive science. Ethical considerations are increasingly important in AI development.",
+#         "Artificial intelligence research spans many disciplines including mathematics statistics "
+#         "and cognitive science. Ethical considerations are increasingly important in AI development.",
 
-        "Transformers use self attention mechanisms to process sequential data more efficiently "
-        "than recurrent networks. This architecture powers most state of the art language models.",
+#         "Transformers use self attention mechanisms to process sequential data more efficiently "
+#         "than recurrent networks. This architecture powers most state of the art language models.",
 
-        "Climate change affects global weather patterns causing more frequent extreme events. "
-        "Scientists monitor temperature rises and ice cap melting with satellite technology."
-    ] * 200  # Repeat to create larger dataset
+#         "Climate change affects global weather patterns causing more frequent extreme events. "
+#         "Scientists monitor temperature rises and ice cap melting with satellite technology."
+#     ] * 200  # Repeat to create larger dataset
 
-    # Simple split
-    train_ratio = 0.8
-    val_ratio = 0.1
-    
-    n_total = len(sample_paragraphs)
-    n_train = int(n_total * train_ratio)
-    n_val = int(n_total * val_ratio)
-    
-    train_texts = sample_paragraphs[:n_train]
-    valid_texts = sample_paragraphs[n_train:n_train + n_val]
-    test_texts = sample_paragraphs[n_train + n_val:]
-    
-    print(f"Sample wiki data loaded: {len(train_texts)} train, {len(valid_texts)} valid, {len(test_texts)} test samples")
+#     # Simple split
+#     train_ratio = 0.8
+#     val_ratio = 0.1
+
+#     n_total = len(sample_paragraphs)
+#     n_train = int(n_total * train_ratio)
+#     n_val = int(n_total * val_ratio)
+
+#     train_texts = sample_paragraphs[:n_train]
+#     valid_texts = sample_paragraphs[n_train:n_train + n_val]
+#     test_texts = sample_paragraphs[n_train + n_val:]
+
+#     print(f"Sample wiki data loaded: {len(train_texts)} train, {len(valid_texts)} valid, {len(test_texts)} test samples")
+#     return train_texts, valid_texts, test_texts
+def load_imdb_text_data(data_path: str) -> Tuple[List[str], List[str], List[str]]:
+    print(f"Loading IMDb text data for language modeling from {data_path}...")
+    # 增加 nrows=20000，只读取前两万行完好的数据
+    df = pd.read_csv(data_path, nrows=20000)
+
+    texts = df['review'].tolist()
+
+    train_texts, temp_texts = train_test_split(texts, test_size=0.2, random_state=SEED)
+    valid_texts, test_texts = train_test_split(temp_texts, test_size=0.5, random_state=SEED)
+
+    print(f"IMDb text data loaded: {len(train_texts)} train, {len(valid_texts)} valid, {len(test_texts)} test samples")
     return train_texts, valid_texts, test_texts
+# def load_imdb_sentiment_data(data_path: Optional[str] = None) -> Tuple[List[Tuple[str, int]], List[Tuple[str, int]], List[Tuple[str, int]]]:
+#     """
+#     Load IMDb sentiment analysis dataset.
+#     Structure should be:
+#         data_path/
+#             train/
+#                 pos/*.txt
+#                 neg/*.txt
+#             test/
+#                 pos/*.txt
+#                 neg/*.txt
 
-def load_imdb_sentiment_data(data_path: Optional[str] = None) -> Tuple[List[Tuple[str, int]], List[Tuple[str, int]], List[Tuple[str, int]]]:
-    """
-    Load IMDb sentiment analysis dataset.
-    Structure should be:
-        data_path/
-            train/
-                pos/*.txt
-                neg/*.txt
-            test/
-                pos/*.txt  
-                neg/*.txt
-    
-    Returns tuples of (text, label) where label: 1=positive, 0=negative
-    """
-    if not data_path or not os.path.exists(data_path):
-        print("IMDb data path not found or invalid. Using synthetic sentiment data...")
-        # Generate synthetic but realistic sentiment data
-        positive_phrases = [
-            "excellent movie great acting superb direction highly recommended",
-            "amazing film wonderful story brilliant performances must watch",
-            "outstanding production fantastic cinematography perfect casting",
-            "incredible experience beautiful visuals strong narrative",
-            "masterpiece excellent writing powerful emotional impact"
-        ]
-        negative_phrases = [
-            "terrible movie poor acting bad direction waste of time",
-            "awful film boring story weak performances avoid at all costs",
-            "disappointing production ugly visuals terrible casting",
-            "frustrating experience dull visuals weak plot",
-            "failure poor writing no emotional engagement"
-        ]
-        
-        train_data = []
-        for _ in range(400):
-            if random.random() < 0.5:
-                text = random.choice(positive_phrases) + " " + random.choice(positive_phrases)
-                label = 1
-            else:
-                text = random.choice(negative_phrases) + " " + random.choice(negative_phrases)
-                label = 0
-            train_data.append((text, label))
-            
-        valid_data = []
-        for _ in range(100):
-            if random.random() < 0.5:
-                text = random.choice(positive_phrases)
-                label = 1
-            else:
-                text = random.choice(negative_phrases)
-                label = 0
-            valid_data.append((text, label))
-            
-        test_data = valid_data.copy()
-        return train_data, valid_data, test_data
+#     Returns tuples of (text, label) where label: 1=positive, 0=negative
+#     """
+#     if not data_path or not os.path.exists(data_path):
+#         print("IMDb data path not found or invalid. Using synthetic sentiment data...")
+#         # Generate synthetic but realistic sentiment data
+#         positive_phrases = [
+#             "excellent movie great acting superb direction highly recommended",
+#             "amazing film wonderful story brilliant performances must watch",
+#             "outstanding production fantastic cinematography perfect casting",
+#             "incredible experience beautiful visuals strong narrative",
+#             "masterpiece excellent writing powerful emotional impact"
+#         ]
+#         negative_phrases = [
+#             "terrible movie poor acting bad direction waste of time",
+#             "awful film boring story weak performances avoid at all costs",
+#             "disappointing production ugly visuals terrible casting",
+#             "frustrating experience dull visuals weak plot",
+#             "failure poor writing no emotional engagement"
+#         ]
 
-    train_data = []
-    test_data = []
-    
-    # Load training data
-    for split, data_list in [("train", train_data), ("test", test_data)]:
-        split_path = os.path.join(data_path, split)
-        if not os.path.exists(split_path):
-            continue
-            
-        for sentiment in ["pos", "neg"]:
-            sent_path = os.path.join(split_path, sentiment)
-            if not os.path.exists(sent_path):
-                continue
-                
-            label = 1 if sentiment == "pos" else 0
-            for filename in os.listdir(sent_path):
-                if filename.endswith(".txt"):
-                    file_path = os.path.join(sent_path, filename)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            text = f.read().strip()
-                            if text:
-                                data_list.append((text, label))
-                    except Exception as e:
-                        print(f"Error reading {file_path}: {e}")
-    
-    # Split train into train/valid
-    combined_train = train_data
-    train_data = combined_train[:int(0.9 * len(combined_train))]
-    valid_data = combined_train[int(0.9 * len(combined_train)):]
+#         train_data = []
+#         for _ in range(400):
+#             if random.random() < 0.5:
+#                 text = random.choice(positive_phrases) + " " + random.choice(positive_phrases)
+#                 label = 1
+#             else:
+#                 text = random.choice(negative_phrases) + " " + random.choice(negative_phrases)
+#                 label = 0
+#             train_data.append((text, label))
+
+#         valid_data = []
+#         for _ in range(100):
+#             if random.random() < 0.5:
+#                 text = random.choice(positive_phrases)
+#                 label = 1
+#             else:
+#                 text = random.choice(negative_phrases)
+#                 label = 0
+#             valid_data.append((text, label))
+
+#         test_data = valid_data.copy()
+#         return train_data, valid_data, test_data
+
+#     train_data = []
+#     test_data = []
+
+#     # Load training data
+#     for split, data_list in [("train", train_data), ("test", test_data)]:
+#         split_path = os.path.join(data_path, split)
+#         if not os.path.exists(split_path):
+#             continue
+
+#         for sentiment in ["pos", "neg"]:
+#             sent_path = os.path.join(split_path, sentiment)
+#             if not os.path.exists(sent_path):
+#                 continue
+
+#             label = 1 if sentiment == "pos" else 0
+#             for filename in os.listdir(sent_path):
+#                 if filename.endswith(".txt"):
+#                     file_path = os.path.join(sent_path, filename)
+#                     try:
+#                         with open(file_path, 'r', encoding='utf-8') as f:
+#                             text = f.read().strip()
+#                             if text:
+#                                 data_list.append((text, label))
+#                     except Exception as e:
+#                         print(f"Error reading {file_path}: {e}")
+
+#     # Split train into train/valid
+#     combined_train = train_data
+#     train_data = combined_train[:int(0.9 * len(combined_train))]
+#     valid_data = combined_train[int(0.9 * len(combined_train)):]
+
+#     print(f"IMDb sentiment data loaded: {len(train_data)} train, {len(valid_data)} valid, {len(test_data)} test samples")
+#     return train_data, valid_data, test_data
+def load_imdb_sentiment_data(data_path: str) -> Tuple[List[Tuple[str, int]], List[Tuple[str, int]], List[Tuple[str, int]]]:
+    """
+    Load IMDb sentiment data for downstream task (supervised) from a CSV file.
+    """
+    print(f"Loading IMDb sentiment data from {data_path}...")
+
+    # 1. 直接读取 CSV 文件
+    df = pd.read_csv(data_path, nrows=20000)
+
+    # 2. 将字符串情感标签映射为整数 (positive -> 1, negative -> 0)
+    df['label'] = df['sentiment'].map({'positive': 1, 'negative': 0})
+
+    # 3. 组合成 (text, label) 的元组列表
+    data = list(zip(df['review'], df['label']))
+
+    # 4. 按照 80/10/10 划分训练集、验证集和测试集
+    train_data, temp_data = train_test_split(data, test_size=0.2, random_state=SEED)
+    valid_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=SEED)
 
     print(f"IMDb sentiment data loaded: {len(train_data)} train, {len(valid_data)} valid, {len(test_data)} test samples")
     return train_data, valid_data, test_data
@@ -518,7 +571,7 @@ def load_imdb_sentiment_data(data_path: Optional[str] = None) -> Tuple[List[Tupl
 def prepare_language_model_loaders(texts: List[str], vocab: Dict[str, Any], block_size: int, batch_size: int) \
         -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Prepare data loaders for language modeling task."""
-    
+
     def numericalize(text: str) -> List[int]:
         tokens = simple_tokenize(text)
         return [vocab['stoi'].get(token, vocab['unk_idx']) for token in tokens]
@@ -641,7 +694,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, criterion: nn.Module,
     perplexity = math.exp(avg_loss)
     return avg_loss, perplexity
 
-def measure_inference_speed(model: nn.Module, prompt: str, vocab: Dict[str, Any], device: torch.device, 
+def measure_inference_speed(model: nn.Module, prompt: str, vocab: Dict[str, Any], device: torch.device,
                            num_samples: int = 100, max_len: int = 20) -> Tuple[float, float]:
     """
     Measure inference speed (tokens per second).
@@ -650,36 +703,36 @@ def measure_inference_speed(model: nn.Module, prompt: str, vocab: Dict[str, Any]
     model.eval()
     tokens = simple_tokenize(prompt)
     ids = [vocab['stoi'].get(token, vocab['unk_idx']) for token in tokens]
-    
+
     start_time = time.time()
     total_tokens_generated = 0
-    
+
     with torch.no_grad():
         for _ in range(num_samples):
             current_ids = ids.copy()
             for _ in range(max_len):
                 src = torch.tensor(current_ids[-CONFIG["block_size"]:]).unsqueeze(1).to(device)
-                
+
                 if isinstance(model, (RNNLanguageModel, LSTMLanguageModel)):
                     hidden = model.init_hidden(1)
                     output, _ = model(src, hidden)
                 else:
                     output, _ = model(src)
-                
+
                 logits = output[-1, 0, :]
                 pred_id = logits.argmax().item()
                 current_ids.append(pred_id)
                 total_tokens_generated += 1
-                
+
                 if pred_id == vocab['pad_idx']:
                     break
-    
+
     total_time = time.time() - start_time
     tps = total_tokens_generated / total_time if total_time > 0 else 0.0
-    
+
     return total_time / num_samples, tps
 
-def generate_text(model: nn.Module, prompt: str, vocab: Dict[str, Any], 
+def generate_text(model: nn.Module, prompt: str, vocab: Dict[str, Any],
                   device: torch.device, max_len: int = 50) -> str:
     """Generate text from a prompt."""
     model.eval()
@@ -709,7 +762,7 @@ def generate_text(model: nn.Module, prompt: str, vocab: Dict[str, Any],
             word = vocab['itos'][i]
             if word != '<pad>':
                 generated_words.append(word)
-    
+
     return prompt + " " + " ".join(generated_words)
 
 # ---------------------------
@@ -805,7 +858,7 @@ def ablate_embeddings(model_class: type, train_loader: DataLoader, val_loader: D
         else:
             method = "word2vec" if "word2vec" in emb_type else "glove_hf"
             fixed_emb = create_fixed_embedding_layer(vocab, CONFIG["embedding_dim"], method)
-            model.embedding = fixed_emb
+            model.embedding = fixed_emb.to(device)
 
         optimizer = optim.Adam(model.parameters(), lr=CONFIG["learning_rate"])
         criterion = nn.CrossEntropyLoss(ignore_index=vocab['pad_idx'])
@@ -863,8 +916,15 @@ def ablate_embeddings(model_class: type, train_loader: DataLoader, val_loader: D
         plt.legend()
 
         plt.subplot(1, 2, 2)
-        val_epochs = list(range(CONFIG["eval_interval"], len(val_losses)*CONFIG["eval_interval"]+1, CONFIG["eval_interval"]))
-        plt.plot(val_epochs, val_losses, 'r-', label='Val Loss')
+        # val_epochs = list(range(CONFIG["eval_interval"], len(val_losses)*CONFIG["eval_interval"]+1, CONFIG["eval_interval"]))
+        # plt.plot(val_epochs, val_losses, 'r-', label='Val Loss')
+        if len(val_losses) > 0:
+            val_epochs = list(range(CONFIG["eval_interval"], len(val_losses)*CONFIG["eval_interval"]+1, CONFIG["eval_interval"]))
+            # --- 修改了这里：把 'r-' 换成了 'ro-'，强制把单个数据点画成圆点 ---
+            plt.plot(val_epochs, val_losses, 'ro-', label='Val Loss')
+        else:
+            plt.text(0.5, 0.5, "No Validation Data\n(Epochs < eval_interval)",
+                     horizontalalignment='center', verticalalignment='center')
         plt.title(f'Validation Loss ({emb_type})')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
@@ -894,17 +954,17 @@ class SentimentDataset(Dataset):
     def __getitem__(self, idx):
         text = self.texts[idx]
         label = self.labels[idx]
-        
+
         # Tokenize and numericalize
         tokens = simple_tokenize(text)[:self.max_len]
         ids = [self.vocab['stoi'].get(t, self.vocab['unk_idx']) for t in tokens]
-        
+
         # Pad to fixed length
         if len(ids) < self.max_len:
             ids += [self.vocab['pad_idx']] * (self.max_len - len(ids))
         else:
             ids = ids[:self.max_len]
-            
+
         return torch.tensor(ids, dtype=torch.long), torch.tensor(label, dtype=torch.long)
 
 def extract_features(model: nn.Module, data_loader: DataLoader, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -1022,12 +1082,12 @@ def main():
     print("="*60)
 
     # Load pretraining data (language modeling)
-    train_texts, val_texts, test_texts = load_sample_wiki_data()
-    
+    train_texts, val_texts, test_texts = load_imdb_text_data(CONFIG["imdb_data_path"])
+
     # Build vocabulary from training texts only
     vocab_dict = build_vocab_from_texts(
-        train_texts, 
-        min_freq=CONFIG["min_freq"], 
+        train_texts,
+        min_freq=CONFIG["min_freq"],
         max_size=CONFIG["vocab_size_limit"]
     )
     print(f"Vocabulary size: {vocab_dict['size']}")
@@ -1080,10 +1140,10 @@ def main():
                 kwargs["nhead"] = CONFIG["nhead"]
 
             model = ModelClass(
-                vocab_dict['size'], 
-                CONFIG["embedding_dim"], 
+                vocab_dict['size'],
+                CONFIG["embedding_dim"],
                 CONFIG["hidden_dim"],
-                CONFIG["num_layers"], 
+                CONFIG["num_layers"],
                 CONFIG["dropout"],
                 **kwargs
             ).to(CONFIG["device"])
@@ -1185,7 +1245,7 @@ def main():
 
     # Load real sentiment data
     sentiment_train, sentiment_val, sentiment_test = load_imdb_sentiment_data(CONFIG["imdb_data_path"])
-    
+
     # Extract texts and labels
     train_texts_sent = [t[0] for t in sentiment_train]
     train_labels_sent = [t[1] for t in sentiment_train]
@@ -1195,7 +1255,7 @@ def main():
     # Create datasets and loaders
     sent_train_dataset = SentimentDataset(train_texts_sent, train_labels_sent, vocab_dict)
     sent_val_dataset = SentimentDataset(val_texts_sent, val_labels_sent, vocab_dict)
-    
+
     sent_train_loader = DataLoader(sent_train_dataset, batch_size=16, shuffle=True)
     sent_val_loader = DataLoader(sent_val_dataset, batch_size=16)
 
@@ -1214,13 +1274,13 @@ def main():
     # Create feature-only loaders
     train_feature_dataset = torch.utils.data.TensorDataset(train_features, train_labels)
     val_feature_dataset = torch.utils.data.TensorDataset(val_features, val_labels)
-    
+
     train_feature_loader = DataLoader(train_feature_dataset, batch_size=16, shuffle=True)
     val_feature_loader = DataLoader(val_feature_dataset, batch_size=16)
 
     # Train downstream classifier
     downstream_metrics = train_downstream_task(
-        train_feature_loader, val_feature_loader, 
+        train_feature_loader, val_feature_loader,
         CONFIG["hidden_dim"]
     )
     results["part_iii"]["metrics"] = downstream_metrics
@@ -1238,6 +1298,8 @@ def main():
     # Final summary
     print("\n" + "="*70)
     print("ASSIGNMENT COMPLETED SUCCESSFULLY")
+    print("All parts implemented with detailed logging and visualization.")
+    print("Refer to generated PNG files and saved results for analysis.")
     print("="*70)
 
 
