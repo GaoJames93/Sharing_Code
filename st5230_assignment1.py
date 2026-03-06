@@ -971,50 +971,99 @@ class SentimentDataset(Dataset):
 
         return torch.tensor(ids, dtype=torch.long), torch.tensor(label, dtype=torch.long)
 
+# def extract_features(model: nn.Module, data_loader: DataLoader, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
+#     """
+#     Extract features from trained language model using mean pooling.
+#     Ensures feature and label counts match exactly across batches.
+#     """
+#     model.eval()
+#     features_list = []
+#     labels_list = []
+
+#     with torch.no_grad():
+#         for src, labels in data_loader:
+#             # Move to device and transpose for model compatibility
+#             src = src.to(device)
+#             src = src.t()  # (batch_size, seq_len) -> (seq_len, batch_size)
+
+#             # Forward pass through embedding and encoder
+#             if isinstance(model, (RNNLanguageModel, LSTMLanguageModel)):
+#                 hidden = model.init_hidden(src.size(1))
+#                 embedded = model.dropout(model.embedding(src))
+#                 encoded, _ = model.encoder(embedded, hidden)
+#             else:
+#                 # Handle Transformer case
+#                 embedded = model.dropout(model.embedding(src))
+#                 seq_len = embedded.size(0)
+#                 positions = torch.arange(0, seq_len, dtype=torch.long, device=embedded.device).unsqueeze(1)
+#                 pos_embed = model.pos_embedding(positions)
+#                 x = embedded * model.scale.to(embedded.device) + pos_embed
+#                 x = model.dropout(x)
+#                 encoded = model.encoder(x)
+
+#             # Apply mean pooling over sequence dimension
+#             pooled = encoded.mean(dim=0)  # (batch_size, hidden_dim)
+#             features_list.append(pooled.cpu())
+#             labels_list.append(labels)  # labels shape: (batch_size,)
+
+#     # Concatenate all batches
+#     features = torch.cat(features_list, dim=0)  # (total_samples, hidden_dim)
+#     labels = torch.cat(labels_list, dim=0)      # (total_samples,)
+
+#     # Critical: Validate dimension alignment
+#     assert features.size(0) == labels.size(0), \
+#         f"Feature-label count mismatch after extraction: {features.size(0)} vs {labels.size(0)}"
+
+#     return features, labels
 def extract_features(model: nn.Module, data_loader: DataLoader, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Extract features from trained language model using mean pooling.
-    Ensures feature and label counts match exactly across batches.
+    Extract features from trained language model using Masked Mean Pooling.
+    Ensures <pad> tokens do not dilute the extracted sentence representations.
     """
     model.eval()
     features_list = []
     labels_list = []
+    
+    # 动态获取当前 vocab 中的 pad_idx
+    pad_idx = data_loader.dataset.vocab['pad_idx']
 
     with torch.no_grad():
         for src, labels in data_loader:
-            # Move to device and transpose for model compatibility
             src = src.to(device)
-            src = src.t()  # (batch_size, seq_len) -> (seq_len, batch_size)
+            src = src.t()  # (seq_len, batch_size)
 
-            # Forward pass through embedding and encoder
+            # 1. 识别出哪些位置是真实的词 (1)，哪些是 pad (0)
+            # valid_mask shape: (seq_len, batch_size, 1)
+            valid_mask = (src != pad_idx).float().unsqueeze(-1)
+
+            # 2. 前向传播：统一调用模型内部的 encode 方法
             if isinstance(model, (RNNLanguageModel, LSTMLanguageModel)):
                 hidden = model.init_hidden(src.size(1))
                 embedded = model.dropout(model.embedding(src))
                 encoded, _ = model.encoder(embedded, hidden)
             else:
-                # Handle Transformer case
-                embedded = model.dropout(model.embedding(src))
-                seq_len = embedded.size(0)
-                positions = torch.arange(0, seq_len, dtype=torch.long, device=embedded.device).unsqueeze(1)
-                pos_embed = model.pos_embedding(positions)
-                x = embedded * model.scale.to(embedded.device) + pos_embed
-                x = model.dropout(x)
-                encoded = model.encoder(x)
+                # Transformer 走这里，复用我们刚才修复了 Causal Mask 的 encode 方法
+                encoded, _ = model.encode(src)
 
-            # Apply mean pooling over sequence dimension
-            pooled = encoded.mean(dim=0)  # (batch_size, hidden_dim)
+            # 3. Masked Mean Pooling (遮蔽填充词后的平均池化)
+            # 将 pad 位置的特征强行置零
+            encoded = encoded * valid_mask 
+            # 把所有词的特征加起来
+            sum_pooled = encoded.sum(dim=0)  # (batch_size, hidden_dim)
+            # 计算每句话实际有多少个有效的词 (防止除以 0)
+            valid_lengths = valid_mask.sum(dim=0).clamp(min=1.0) 
+            # 仅对有效词求平均
+            pooled = sum_pooled / valid_lengths  
+
             features_list.append(pooled.cpu())
-            labels_list.append(labels)  # labels shape: (batch_size,)
+            labels_list.append(labels) 
 
-    # Concatenate all batches
-    features = torch.cat(features_list, dim=0)  # (total_samples, hidden_dim)
-    labels = torch.cat(labels_list, dim=0)      # (total_samples,)
+    features = torch.cat(features_list, dim=0)  
+    labels = torch.cat(labels_list, dim=0)      
 
-    # Critical: Validate dimension alignment
-    assert features.size(0) == labels.size(0), \
-        f"Feature-label count mismatch after extraction: {features.size(0)} vs {labels.size(0)}"
-
+    assert features.size(0) == labels.size(0), "Feature-label count mismatch"
     return features, labels
+
 
 class SimpleClassifier(nn.Module):
     """Simple downstream classifier."""
