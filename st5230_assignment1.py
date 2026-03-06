@@ -366,7 +366,11 @@ class TransformerLanguageModel(BasicLanguageModel):
         # Scale and add positional encoding
         x = embedded * self.scale.to(embedded.device) + pos_embed
         x = self.dropout(x)
-        return self.encoder(x), None
+        # --- 增加 Causal Mask 防止模型“向未来看” ---
+        mask = nn.Transformer.generate_square_subsequent_mask(seq_len).to(embedded.device)
+        
+        # 将 mask 传入 encoder
+        return self.encoder(x, mask=mask), None
 
 
 # ---------------------------
