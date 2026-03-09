@@ -1,2 +1,2 @@
 # Sharing_Code
-Used for sharing some code taks.
+Used for sharing some code tasks.
